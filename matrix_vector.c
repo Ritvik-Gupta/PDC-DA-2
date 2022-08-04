@@ -5,17 +5,18 @@
 #include <omp.h>
 #include "profile.h"
 
-#define SIZE 20000
+#define N_SIZE 20000
+#define M_SIZE 10000
 
-typedef long int bigint;
+typedef long long int bigint;
 
 typedef struct {
-    int matrix[SIZE][SIZE];
-    int vector[SIZE];
+    int matrix[N_SIZE][M_SIZE];
+    int vector[M_SIZE];
 } Dataset;
 
 typedef struct {
-    bigint dot_prod_vector[SIZE];
+    bigint prod_vector[N_SIZE];
 } Result;
 
 static Dataset dataset;
@@ -25,77 +26,87 @@ void init_dataset() {
     srand(time(NULL));
 
 #pragma omp parallel for 
-    for (int i = 0; i < SIZE; ++i) {
-        for (int j = 0; j < SIZE; ++j)
-            dataset.matrix[i][j] = rand() % 10;
-        dataset.vector[i] = rand() % 10;
+    for (int j = 0; j < M_SIZE; ++j) {
+        for (int i = 0; i < N_SIZE; ++i)
+            dataset.matrix[i][j] = rand() % 5;
+        dataset.vector[j] = rand() % 5;
     }
-
 }
 
 void reset_result() {
 #pragma omp parallel for
-    for (int i = 0; i < SIZE; ++i)
-        result.dot_prod_vector[i] = 0;
+    for (int i = 0; i < N_SIZE; ++i)
+        result.prod_vector[i] = 0;
 }
 
 bool result_is_same_to(Result* expected_result) {
-    for (int i = 0; i < SIZE; ++i) {
-        if (expected_result->dot_prod_vector[i] != result.dot_prod_vector[i])
+    for (int i = 0; i < N_SIZE; ++i) {
+        if (expected_result->prod_vector[i] != result.prod_vector[i])
             return false;
     }
     return true;
 }
 
 void compute_sequentially() {
-    for (int i = 0; i < SIZE; ++i) {
-        int dot_prod = 0;
-        for (int j = 0; j < SIZE; ++j)
+    int i, j;
+    bigint dot_prod;
+
+    for (i = 0; i < N_SIZE; ++i) {
+        dot_prod = 0;
+
+        for (j = 0; j < M_SIZE; ++j)
             dot_prod += dataset.matrix[i][j] * dataset.vector[j];
-        result.dot_prod_vector[i] = dot_prod;
+        result.prod_vector[i] = dot_prod;
     }
 }
 
 void compute_with_inner_parallel_for_reduction() {
-    for (int i = 0; i < SIZE; ++i) {
-        int dot_prod = 0;
+    int i, j;
+    bigint dot_prod;
 
-#pragma omp parallel for reduction(+: dot_prod)
-        for (int j = 0; j < SIZE; ++j)
+    for (i = 0; i < N_SIZE; ++i) {
+        dot_prod = 0;
+
+#pragma omp parallel for reduction(+: dot_prod) private(j)
+        for (j = 0; j < M_SIZE; ++j)
             dot_prod += dataset.matrix[i][j] * dataset.vector[j];
-        result.dot_prod_vector[i] = dot_prod;
+        result.prod_vector[i] = dot_prod;
     }
 }
 
 
 void compute_with_outer_parallel_for() {
-#pragma omp parallel for
-    for (int i = 0; i < SIZE; ++i) {
-        int dot_prod = 0;
+    int i, j;
+    bigint dot_prod;
 
-        for (int j = 0; j < SIZE; ++j)
+#pragma omp parallel for private(i, j, dot_prod)
+    for (i = 0; i < N_SIZE; ++i) {
+        dot_prod = 0;
+
+        for (j = 0; j < M_SIZE; ++j)
             dot_prod += dataset.matrix[i][j] * dataset.vector[j];
-        result.dot_prod_vector[i] = dot_prod;
+        result.prod_vector[i] = dot_prod;
     }
 }
 
 void compute_with_collapsed_parallel_for_reduction() {
-    bigint priv_dot_prod_vector[SIZE];
+    int i, j;
+    bigint priv_prod_vector[N_SIZE];
 
-#pragma omp parallel private(priv_dot_prod_vector)
+#pragma omp parallel private(i, j, priv_prod_vector)
     {
-        for (int i = 0; i < SIZE; ++i)
-            priv_dot_prod_vector[i] = 0;
+        for (i = 0; i < N_SIZE; ++i)
+            priv_prod_vector[i] = 0;
 
 #pragma omp for collapse(2) 
-        for (int i = 0; i < SIZE; ++i) {
-            for (int j = 0; j < SIZE; ++j)
-                priv_dot_prod_vector[i] += dataset.matrix[i][j] * dataset.vector[j];
+        for (i = 0; i < N_SIZE; ++i) {
+            for (j = 0; j < M_SIZE; ++j)
+                priv_prod_vector[i] += dataset.matrix[i][j] * dataset.vector[j];
         }
 
-        for (int i = 0; i < SIZE; ++i) {
+        for (i = 0; i < N_SIZE; ++i) {
 #pragma omp atomic
-            result.dot_prod_vector[i] += priv_dot_prod_vector[i];
+            result.prod_vector[i] += priv_prod_vector[i];
         }
     }
 }
@@ -108,8 +119,8 @@ void main() {
     printf("Sequential Computation\n");
     profile(compute_sequentially);
     // printf("Dot Product:\n");
-    // for (int i = 0; i < SIZE; ++i)
-    //     printf("%ld\t", result.dot_prod_vector[i]);
+    // for (int i = 0; i < N_SIZE; ++i)
+    //     printf("%lld\t", result.prod_vector[i]);
     printf("\n\n");
 
     Result actual_result = result;
@@ -118,8 +129,8 @@ void main() {
     printf("Inner Parallel For Reduction Computation\n");
     profile(compute_with_inner_parallel_for_reduction);
     // printf("Dot Product:\n");
-    // for (int i = 0; i < SIZE; ++i)
-    //     printf("%ld\t", result.dot_prod_vector[i]);
+    // for (int i = 0; i < N_SIZE; ++i)
+    //     printf("%lld\t", result.prod_vector[i]);
     printf("\n\n");
 
     if (!result_is_same_to(&actual_result)) {
@@ -131,8 +142,8 @@ void main() {
     printf("Outer Parallel For Reduction Computation\n");
     profile(compute_with_outer_parallel_for);
     // printf("Dot Product:\n");
-    // for (int i = 0; i < SIZE; ++i)
-    //     printf("%ld\t", result.dot_prod_vector[i]);
+    // for (int i = 0; i < N_SIZE; ++i)
+    //     printf("%lld\t", result.prod_vector[i]);
     printf("\n\n");
 
     if (!result_is_same_to(&actual_result)) {
@@ -144,8 +155,8 @@ void main() {
     printf("Collapsed Parallel For Reduction Computation\n");
     profile(compute_with_collapsed_parallel_for_reduction);
     // printf("Dot Product:\n");
-    // for (int i = 0; i < SIZE; ++i)
-    //     printf("%ld\t", result.dot_prod_vector[i]);
+    // for (int i = 0; i < N_SIZE; ++i)
+    //     printf("%lld\t", result.prod_vector[i]);
     printf("\n\n");
 
     if (!result_is_same_to(&actual_result)) {
