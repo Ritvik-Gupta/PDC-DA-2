@@ -130,7 +130,6 @@ void main() {
     profile(compute_sequentially);
     // print_result();
     printf("\n");
-
     Result actual_result = result;
     reset_result();
 
@@ -138,7 +137,6 @@ void main() {
     profile(compute_with_inner_parallel_for_reduction);
     // print_result();
     printf("\n");
-
     assert_result_equals(&actual_result);
     reset_result();
 
@@ -146,7 +144,6 @@ void main() {
     profile(compute_with_outer_parallel_for);
     // print_result();
     printf("\n");
-
     assert_result_equals(&actual_result);
     reset_result();
 
@@ -154,7 +151,6 @@ void main() {
     profile(compute_with_collapsed_parallel_for_reduction);
     // print_result();
     printf("\n");
-
     assert_result_equals(&actual_result);
     reset_result();
 }

@@ -30,13 +30,13 @@ void init_dataset() {
 #pragma omp parallel for collapse(2) private(i, j)
     for (i = 0; i < L_SIZE; ++i) {
         for (j = 0; j < M_SIZE; ++j)
-            dataset.matrix_a[i][j] = rand() % 5;
+            dataset.matrix_a[i][j] = rand() % 10;
     }
 
 #pragma omp parallel for collapse(2) private(j, k)
     for (j = 0; j < M_SIZE; ++j) {
         for (k = 0; k < N_SIZE; ++k)
-            dataset.matrix_b[j][k] = rand() % 5;
+            dataset.matrix_b[j][k] = rand() % 10;
     }
 }
 
@@ -44,9 +44,10 @@ void reset_result() {
     int i, k;
 
 #pragma omp parallel for collapse(2) private(i, k)
-    for (i = 0; i < L_SIZE; ++i)
+    for (i = 0; i < L_SIZE; ++i) {
         for (k = 0; k < N_SIZE; ++k)
             result.prod_matrix[i][k] = 0;
+    }
 }
 
 void print_result() {
@@ -60,12 +61,13 @@ void print_result() {
 }
 
 void assert_result_equals(Result* expected_result) {
-    for (int i = 0; i < L_SIZE; ++i)
+    for (int i = 0; i < L_SIZE; ++i) {
         for (int k = 0; k < N_SIZE; ++k)
             if (expected_result->prod_matrix[i][k] != result.prod_matrix[i][k]) {
                 printf("\nAssertion Failed: Invalid Result Matrix\n");
                 exit(1);
             }
+    }
 }
 
 void compute_sequentially() {
@@ -83,23 +85,7 @@ void compute_sequentially() {
     }
 }
 
-void compute_with_inner_parallel_for_reduction() {
-    int i, j, k;
-    bigint dot_prod;
-
-    for (i = 0; i < L_SIZE; ++i) {
-        for (k = 0; k < N_SIZE; ++k) {
-            dot_prod = 0;
-
-#pragma omp parallel for reduction(+: dot_prod) private(j)
-            for (j = 0; j < M_SIZE; ++j)
-                dot_prod += dataset.matrix_a[i][j] * dataset.matrix_b[j][k];
-            result.prod_matrix[i][k] = dot_prod;
-        }
-    }
-}
-
-void compute_with_middle_parallel_for() {
+void compute_with_inner_parallel_for() {
     int i, j, k;
     bigint dot_prod;
 
@@ -147,6 +133,34 @@ void compute_with_half_collapsed_parallel_for() {
     }
 }
 
+void compute_with_collapsed_parallel_for_reduction() {
+    int i, j, k;
+    bigint priv_prod_matrix[L_SIZE][N_SIZE];
+
+#pragma omp parallel private(i, j, k, priv_prod_matrix)
+    {
+        for (i = 0; i < L_SIZE; ++i) {
+            for (k = 0; k < N_SIZE; ++k)
+                priv_prod_matrix[i][k] = 0;
+        }
+
+#pragma omp for collapse(3)
+        for (i = 0; i < L_SIZE; ++i) {
+            for (k = 0; k < N_SIZE; ++k) {
+                for (j = 0; j < M_SIZE; ++j)
+                    priv_prod_matrix[i][k] += dataset.matrix_a[i][j] * dataset.matrix_b[j][k];
+            }
+        }
+
+#pragma omp critical
+        for (i = 0; i < L_SIZE; ++i) {
+            for (k = 0; k < N_SIZE; ++k) {
+                result.prod_matrix[i][k] += priv_prod_matrix[i][k];
+            }
+        }
+    }
+}
+
 void main() {
     init_dataset();
     reset_result();
@@ -156,39 +170,36 @@ void main() {
     profile(compute_sequentially);
     // print_result();
     printf("\n");
-
     Result actual_result = result;
     reset_result();
 
-    printf("Inner Parallel For Reduction Computation\n");
-    profile(compute_with_inner_parallel_for_reduction);
+    printf("Inner Parallel For Computation\n");
+    profile(compute_with_inner_parallel_for);
     // print_result();
     printf("\n");
-
     assert_result_equals(&actual_result);
     reset_result();
 
-    printf("Midlle Parallel For Reduction Computation\n");
-    profile(compute_with_middle_parallel_for);
-    // print_result();
-    printf("\n");
-
-    assert_result_equals(&actual_result);
-    reset_result();
-
-    printf("Outer Parallel For Reduction Computation\n");
+    printf("Outer Parallel For Computation\n");
     profile(compute_with_outer_parallel_for);
     // print_result();
     printf("\n");
-
     assert_result_equals(&actual_result);
     reset_result();
 
-    printf("Half Collapsed Parallel For Reduction Computation\n");
+    printf("Half Collapsed Parallel For Computation\n");
     profile(compute_with_half_collapsed_parallel_for);
     // print_result();
     printf("\n");
-
     assert_result_equals(&actual_result);
     reset_result();
+
+    printf("Collapsed Parallel For Reduction Computation\n");
+    profile(compute_with_collapsed_parallel_for_reduction);
+    // print_result();
+    printf("\n");
+    assert_result_equals(&actual_result);
+    reset_result();
+
+    printf("\nEND\n");
 }
