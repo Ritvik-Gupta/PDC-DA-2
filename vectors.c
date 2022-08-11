@@ -28,12 +28,17 @@ void init_dataset() {
 }
 
 void reset_result() {
-    srand(time(NULL));
+    result.dot_prod = 0;
+}
 
-#pragma omp parallel for 
-    for (int i = 0; i < VEC_SIZE; ++i) {
-        dataset.vector_a[i] = rand() % 10;
-        dataset.vector_b[i] = rand() % 10;
+void print_result() {
+    printf("Dot Product: %lld\n", result.dot_prod);
+}
+
+void assert_result_equals(DotProdResult* expected_result) {
+    if (expected_result->dot_prod != result.dot_prod) {
+        printf("\nAssertion Failed: Invalid Result\n");
+        exit(1);
     }
 }
 
@@ -73,16 +78,22 @@ void main() {
 
     printf("Sequential Computation\n");
     profile(compute_sequentially);
-    printf("Dot Product: %lld\n", result.dot_prod);
+    print_result();
     printf("\n");
+    DotProdResult actual_result = result;
+    reset_result();
 
     printf("Parallel For Reduction Computation\n");
     profile(compute_with_parallel_for_reduction);
-    printf("Dot Product: %lld\n", result.dot_prod);
+    print_result();
     printf("\n");
+    assert_result_equals(&actual_result);
+    reset_result();
 
     printf("SIMD Reduction Computation\n");
     profile(compute_with_simd_reduction);
-    printf("Dot Product: %lld\n", result.dot_prod);
+    print_result();
     printf("\n");
+    assert_result_equals(&actual_result);
+    reset_result();
 }
